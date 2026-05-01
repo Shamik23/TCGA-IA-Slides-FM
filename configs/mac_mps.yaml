@@ -1,0 +1,14 @@
+encoder_name: MahmoodLab/UNI
+encoder_backend: timm
+feature_dim: 1024
+batch_size: 4
+max_tiles: 512
+epochs: 50
+learning_rate: 0.0003
+weight_decay: 0.0001
+attention_dim: 256
+hidden_dim: 256
+dropout: 0.15
+val_fraction: 0.2
+seed: 13
+
