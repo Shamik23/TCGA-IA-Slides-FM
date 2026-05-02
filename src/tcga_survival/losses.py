@@ -29,4 +29,3 @@ def cox_partial_log_likelihood(risk, duration, event):
 
 
 cox_ph_loss = cox_partial_log_likelihood
-

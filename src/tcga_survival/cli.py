@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
 
 
 def _positive_int(value: str) -> int:
@@ -14,7 +14,7 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
-def _optional_positive_int(value: str) -> Optional[int]:
+def _optional_positive_int(value: str) -> int | None:
     if value.lower() in {"none", "all"}:
         return None
     return _positive_int(value)
@@ -63,7 +63,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Optional[Sequence[str]] = None) -> None:
+def main(argv: Sequence[str] | None = None) -> None:
     parser = build_parser()
     args = parser.parse_args(argv)
 
@@ -127,4 +127,3 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
 if __name__ == "__main__":
     main()
-

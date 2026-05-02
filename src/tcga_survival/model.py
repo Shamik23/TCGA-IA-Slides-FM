@@ -10,6 +10,7 @@ class GatedAttentionMIL:
         import torch.nn as nn
 
         if cls is GatedAttentionMIL:
+
             class _GatedAttentionMIL(nn.Module):
                 def __init__(self, input_dim: int, attention_dim: int = 256, dropout: float = 0.1):
                     super().__init__()
@@ -54,6 +55,7 @@ class CoxMILSurvivalModel:
         import torch.nn as nn
 
         if cls is CoxMILSurvivalModel:
+
             class _CoxMILSurvivalModel(nn.Module):
                 def __init__(
                     self,
@@ -88,6 +90,8 @@ class CoxMILSurvivalModel:
                     )
 
                 def forward(self, features, mask=None, clinical=None):
+                    import torch
+
                     features = self.feature_norm(features)
                     pooled, attention = self.mil(features, mask)
 
@@ -95,8 +99,6 @@ class CoxMILSurvivalModel:
                         if clinical is None:
                             raise ValueError("clinical covariates are required by this model")
                         clinical_embedding = self.clinical_net(clinical)
-                        import torch
-
                         pooled = torch.cat([pooled, clinical_embedding], dim=-1)
 
                     risk = self.head(pooled).squeeze(-1)
@@ -104,4 +106,3 @@ class CoxMILSurvivalModel:
 
             return _CoxMILSurvivalModel(*args, **kwargs)
         return super().__new__(cls)
-

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
-
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
 
 
-def list_images(path: str | Path) -> List[Path]:
+def list_images(path: str | Path) -> list[Path]:
     folder = Path(path)
     return sorted(
-        item for item in folder.iterdir() if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS
+        item
+        for item in folder.iterdir()
+        if item.is_file() and item.suffix.lower() in IMAGE_EXTENSIONS
     )
 
 
@@ -53,11 +54,16 @@ def _load_timm_encoder(model_name: str, device: str):
     return model, transform
 
 
-def _load_transformers_encoder(model_name: str, device: str):
+def _load_transformers_encoder(model_name: str, device: str, revision: str | None = None):
+    """Load a Hugging Face transformers encoder.
+
+    For supply-chain safety, callers should pin ``revision`` to a known commit
+    SHA or tag instead of relying on the default branch.
+    """
     from transformers import AutoImageProcessor, AutoModel
 
-    processor = AutoImageProcessor.from_pretrained(model_name)
-    model = AutoModel.from_pretrained(model_name)
+    processor = AutoImageProcessor.from_pretrained(model_name, revision=revision)
+    model = AutoModel.from_pretrained(model_name, revision=revision)
     model.eval().to(device)
     return model, processor
 
@@ -113,9 +119,9 @@ def extract_slide_features(
     encoder_name: str = "MahmoodLab/UNI",
     backend: str = "timm",
     batch_size: int = 4,
-    max_tiles: Optional[int] = None,
+    max_tiles: int | None = None,
     device: str = "auto",
-) -> Tuple[int, int]:
+) -> tuple[int, int]:
     import numpy as np
     import torch
 
@@ -128,10 +134,14 @@ def extract_slide_features(
 
     if backend == "timm":
         model, processor = _load_timm_encoder(encoder_name, resolved_device)
-        embed = lambda batch: _embed_with_timm(model, processor, batch, resolved_device)
+
+        def embed(batch: Sequence[Path]):
+            return _embed_with_timm(model, processor, batch, resolved_device)
     elif backend == "transformers":
         model, processor = _load_transformers_encoder(encoder_name, resolved_device)
-        embed = lambda batch: _embed_with_transformers(model, processor, batch, resolved_device)
+
+        def embed(batch: Sequence[Path]):
+            return _embed_with_transformers(model, processor, batch, resolved_device)
     else:
         raise ValueError("backend must be 'timm' or 'transformers'")
 
@@ -146,7 +156,7 @@ def extract_slide_features(
     return int(features.shape[0]), int(features.shape[1])
 
 
-def _read_clinical_csv(path: Optional[str | Path]) -> Dict[str, Dict[str, str]]:
+def _read_clinical_csv(path: str | Path | None) -> dict[str, dict[str, str]]:
     if path is None:
         return {}
 
@@ -159,17 +169,17 @@ def featurize_tile_root(
     tile_root: str | Path,
     output_dir: str | Path,
     manifest_path: str | Path,
-    clinical_csv: Optional[str | Path] = None,
+    clinical_csv: str | Path | None = None,
     encoder_name: str = "MahmoodLab/UNI",
     backend: str = "timm",
     batch_size: int = 4,
-    max_tiles: Optional[int] = None,
+    max_tiles: int | None = None,
     device: str = "auto",
 ) -> None:
     root = Path(tile_root)
     output = Path(output_dir)
     clinical = _read_clinical_csv(clinical_csv)
-    rows: List[Dict[str, str]] = []
+    rows: list[dict[str, str]] = []
 
     slide_dirs = sorted(item for item in root.iterdir() if item.is_dir())
     if not slide_dirs:
@@ -205,7 +215,7 @@ def featurize_tile_root(
         rows.append(row)
         print(f"{slide_id}: {tile_count} tiles -> {feature_dim}D")
 
-    fieldnames = sorted({key for row in rows for key in row.keys()})
+    fieldnames = sorted({key for row in rows for key in row})
     preferred = ["patient_id", "slide_id", "feature_path", "duration_days", "event", "project_id"]
     fieldnames = preferred + [name for name in fieldnames if name not in preferred]
 
@@ -215,4 +225,3 @@ def featurize_tile_root(
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
-

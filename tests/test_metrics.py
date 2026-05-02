@@ -10,7 +10,7 @@ def test_concordance_index_perfect_ordering():
 
 
 def test_concordance_index_handles_no_comparable_pairs():
-    assert concordance_index([5, 6], [0.2, 0.1], [0, 0]) != concordance_index(
-        [5, 6], [0.2, 0.1], [0, 0]
-    )
+    import math
 
+    result = concordance_index([5, 6], [0.2, 0.1], [0, 0])
+    assert math.isnan(result)

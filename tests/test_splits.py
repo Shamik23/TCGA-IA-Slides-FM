@@ -18,4 +18,3 @@ def test_patient_level_split_keeps_patient_slides_together():
     assert train_patients.isdisjoint(val_patients)
     assert train
     assert val
-

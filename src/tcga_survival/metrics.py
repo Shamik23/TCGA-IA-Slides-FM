@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 
-def concordance_index(duration: Sequence[float], risk: Sequence[float], event: Sequence[int]) -> float:
+def concordance_index(
+    duration: Sequence[float], risk: Sequence[float], event: Sequence[int]
+) -> float:
     """Harrell-style c-index where larger risk means shorter survival."""
 
     import math
@@ -33,4 +35,3 @@ def concordance_index(duration: Sequence[float], risk: Sequence[float], event: S
     if comparable == 0:
         return math.nan
     return concordant / comparable
-

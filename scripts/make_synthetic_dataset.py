@@ -43,7 +43,7 @@ def main() -> None:
             {
                 "patient_id": patient_id,
                 "slide_id": slide_id,
-                "feature_path": str(feature_path),
+                "feature_path": str(feature_path.relative_to(args.output_dir)),
                 "duration_days": str(duration),
                 "event": str(event),
                 "project_id": "SYNTHETIC",
@@ -61,4 +61,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

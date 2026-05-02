@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence, Tuple
-
 
 CLINICAL_PREFIX = "clinical_"
 
@@ -19,10 +18,10 @@ class SlideRecord:
     duration_days: float
     event: int
     project_id: str = ""
-    clinical: Tuple[float, ...] = ()
+    clinical: tuple[float, ...] = ()
 
 
-def _as_float(value: object, default: Optional[float] = None) -> float:
+def _as_float(value: object, default: float | None = None) -> float:
     if value is None or value == "":
         if default is None:
             raise ValueError("missing required numeric value")
@@ -39,9 +38,9 @@ def _as_event(value: object) -> int:
     raise ValueError(f"could not parse event value: {value!r}")
 
 
-def read_manifest(path: str | Path) -> List[SlideRecord]:
+def read_manifest(path: str | Path) -> list[SlideRecord]:
     manifest_path = Path(path)
-    records: List[SlideRecord] = []
+    records: list[SlideRecord] = []
 
     with manifest_path.open("r", newline="") as handle:
         reader = csv.DictReader(handle)
@@ -92,14 +91,15 @@ def infer_feature_dim(records: Sequence[SlideRecord]) -> int:
 
 def patient_level_split(
     records: Sequence[SlideRecord], val_fraction: float = 0.2, seed: int = 13
-) -> Tuple[List[SlideRecord], List[SlideRecord]]:
+) -> tuple[list[SlideRecord], list[SlideRecord]]:
     import random
 
     if not 0 <= val_fraction < 1:
         raise ValueError("val_fraction must be in [0, 1)")
 
     patient_ids = sorted({record.patient_id for record in records})
-    rng = random.Random(seed)
+    # nosec B311 - deterministic shuffle for reproducible splits, not security-sensitive
+    rng = random.Random(seed)  # noqa: S311
     rng.shuffle(patient_ids)
 
     if len(patient_ids) <= 1 or val_fraction == 0:
@@ -121,7 +121,7 @@ class SlideBagDataset:
     def __init__(
         self,
         records: Sequence[SlideRecord],
-        max_tiles: Optional[int] = None,
+        max_tiles: int | None = None,
         seed: int = 13,
     ) -> None:
         self.records = list(records)
@@ -131,7 +131,7 @@ class SlideBagDataset:
     def __len__(self) -> int:
         return len(self.records)
 
-    def __getitem__(self, index: int) -> Dict[str, object]:
+    def __getitem__(self, index: int) -> dict[str, object]:
         import numpy as np
 
         record = self.records[index]
@@ -157,7 +157,7 @@ class SlideBagDataset:
         }
 
 
-def collate_slide_bags(batch: Sequence[Dict[str, object]]) -> Dict[str, object]:
+def collate_slide_bags(batch: Sequence[dict[str, object]]) -> dict[str, object]:
     import torch
 
     max_tiles = max(item["features"].shape[0] for item in batch)  # type: ignore[index]
@@ -170,8 +170,8 @@ def collate_slide_bags(batch: Sequence[Dict[str, object]]) -> Dict[str, object]:
     events = torch.zeros(len(batch), dtype=torch.float32)
     clinical = torch.zeros(len(batch), clinical_dim, dtype=torch.float32)
 
-    patient_ids: List[str] = []
-    slide_ids: List[str] = []
+    patient_ids: list[str] = []
+    slide_ids: list[str] = []
     for row, item in enumerate(batch):
         item_features = torch.as_tensor(item["features"], dtype=torch.float32)
         tile_count = item_features.shape[0]
@@ -195,9 +195,8 @@ def collate_slide_bags(batch: Sequence[Dict[str, object]]) -> Dict[str, object]:
     }
 
 
-def group_by_patient(records: Iterable[SlideRecord]) -> Dict[str, List[SlideRecord]]:
-    grouped: Dict[str, List[SlideRecord]] = {}
+def group_by_patient(records: Iterable[SlideRecord]) -> dict[str, list[SlideRecord]]:
+    grouped: dict[str, list[SlideRecord]] = {}
     for record in records:
         grouped.setdefault(record.patient_id, []).append(record)
     return grouped
-

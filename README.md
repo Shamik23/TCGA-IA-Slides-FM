@@ -38,20 +38,51 @@ hardware once features are cached.
 
 ## Setup
 
+### Docker (recommended)
+
+```bash
+docker compose build
+docker compose run --rm tcga-survival --help
+
+# End-to-end synthetic smoke test (writes to ./runs/synthetic):
+docker compose run --rm pipeline
+```
+
+### Conda
+
+```bash
+conda env create -f environment.yml
+conda activate tcga-survival-fm
+pip install -e ".[dev]"
+```
+
+### Local pip / venv
+
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+pip install -e ".[dev]"
 ```
 
-For gated Hugging Face models:
+For gated Hugging Face models (e.g. `MahmoodLab/UNI`):
 
 ```bash
-huggingface-cli login
+huggingface-cli login            # local
+docker compose run --rm tcga-survival huggingface-cli login
 ```
 
-On Apple Silicon, PyTorch will use MPS automatically when available.
+On Apple Silicon, PyTorch uses MPS automatically. The Cox loss falls back to
+CPU for `logcumsumexp`; set `PYTORCH_ENABLE_MPS_FALLBACK=1` to silence the
+warning (already set in `docker-compose.yml`).
+
+## Development
+
+```bash
+ruff check src/ scripts/ tests/    # lint
+ruff format src/ scripts/ tests/   # format
+bandit -r src/                     # security scan
+pytest                             # unit tests
+```
 
 ## Data Layout
 
@@ -128,5 +159,3 @@ tcga-survival train \
 - The code accepts optional numeric clinical covariates using manifest columns
   prefixed with `clinical_`.
 - This is research code, not a clinical device.
-
-# codex

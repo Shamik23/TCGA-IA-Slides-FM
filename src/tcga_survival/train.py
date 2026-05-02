@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple
 
-from .data import SlideBagDataset, SlideRecord, collate_slide_bags, infer_feature_dim, patient_level_split
+from .data import (
+    SlideBagDataset,
+    SlideRecord,
+    collate_slide_bags,
+    infer_feature_dim,
+    patient_level_split,
+)
 from .losses import cox_ph_loss
 from .metrics import concordance_index
 from .model import CoxMILSurvivalModel
@@ -24,7 +30,8 @@ def resolve_device(preferred: str = "auto") -> str:
     return "cpu"
 
 
-def _move_batch(batch: Dict[str, object], device: str) -> Dict[str, object]:
+def _move_batch(batch: dict[str, object], device: str) -> dict[str, object]:
+
     moved = dict(batch)
     for key in ("features", "mask", "duration", "event", "clinical"):
         moved[key] = batch[key].to(device)  # type: ignore[union-attr]
@@ -54,14 +61,14 @@ def _run_epoch(model, loader, optimizer, device: str) -> float:
     return total_loss / max(total_count, 1)
 
 
-def evaluate(model, loader, device: str) -> Dict[str, float]:
+def evaluate(model, loader, device: str) -> dict[str, float]:
     import torch
 
     model.eval()
-    losses: List[float] = []
-    risks: List[float] = []
-    durations: List[float] = []
-    events: List[int] = []
+    losses: list[float] = []
+    risks: list[float] = []
+    durations: list[float] = []
+    events: list[int] = []
 
     with torch.no_grad():
         for batch in loader:
@@ -83,9 +90,9 @@ def build_loaders(
     train_records: Sequence[SlideRecord],
     val_records: Sequence[SlideRecord],
     batch_size: int,
-    max_tiles: Optional[int],
+    max_tiles: int | None,
     seed: int,
-) -> Tuple[object, Optional[object]]:
+) -> tuple[object, object | None]:
     from torch.utils.data import DataLoader
 
     train_dataset = SlideBagDataset(train_records, max_tiles=max_tiles, seed=seed)
@@ -121,11 +128,11 @@ def train_survival_model(
     attention_dim: int = 256,
     hidden_dim: int = 256,
     dropout: float = 0.15,
-    max_tiles: Optional[int] = 512,
+    max_tiles: int | None = 512,
     val_fraction: float = 0.2,
     seed: int = 13,
     device: str = "auto",
-) -> Dict[str, float]:
+) -> dict[str, float]:
     import torch
 
     torch.manual_seed(seed)
@@ -156,7 +163,7 @@ def train_survival_model(
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)
 
     best_metric = float("-inf")
-    best_metrics: Dict[str, float] = {"c_index": float("nan"), "loss": float("nan")}
+    best_metrics: dict[str, float] = {"c_index": float("nan"), "loss": float("nan")}
 
     run_config = {
         "feature_dim": feature_dim,
@@ -208,4 +215,3 @@ def train_survival_model(
 
     (output_path / "metrics.json").write_text(json.dumps(best_metrics, indent=2) + "\n")
     return best_metrics
-

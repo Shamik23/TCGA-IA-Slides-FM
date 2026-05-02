@@ -1,0 +1,33 @@
+services:
+  tcga-survival:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: tcga-survival-fm:latest
+    container_name: tcga-survival
+    volumes:
+      - ./data:/app/data
+      - ./runs:/app/runs
+      - hf_cache:/app/.cache/huggingface
+    environment:
+      - PYTORCH_ENABLE_MPS_FALLBACK=1
+      - HF_HOME=/app/.cache/huggingface
+    # Override entrypoint args via `docker compose run --rm tcga-survival <cmd>`
+    command: ["--help"]
+
+  # Convenience service for running the smoke-test pipeline end-to-end.
+  pipeline:
+    extends:
+      service: tcga-survival
+    container_name: tcga-survival-pipeline
+    entrypoint: ["bash", "-lc"]
+    command:
+      - >
+        python scripts/make_synthetic_dataset.py --output-dir /app/data/synthetic --slides 64
+        && tcga-survival train
+        --manifest /app/data/synthetic/manifest.csv
+        --output-dir /app/runs/synthetic
+        --epochs 2 --batch-size 8
+
+volumes:
+  hf_cache:

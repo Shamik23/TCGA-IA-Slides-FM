@@ -6,9 +6,8 @@ import csv
 import json
 import urllib.parse
 import urllib.request
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
-
 
 GDC_CASES_ENDPOINT = "https://api.gdc.cancer.gov/cases"
 
@@ -59,7 +58,7 @@ FIELDS = [
 ]
 
 
-def _first_numeric(values: Iterable[object]) -> Optional[float]:
+def _first_numeric(values: Iterable[object]) -> float | None:
     for value in values:
         if value in (None, "", "not reported", "Not Reported"):
             continue
@@ -70,7 +69,7 @@ def _first_numeric(values: Iterable[object]) -> Optional[float]:
     return None
 
 
-def _extract_case(row: Dict[str, object]) -> Optional[Dict[str, str]]:
+def _extract_case(row: dict[str, object]) -> dict[str, str] | None:
     demographic = row.get("demographic") or {}
     project = row.get("project") or {}
     diagnoses = row.get("diagnoses") or []
@@ -103,9 +102,9 @@ def _extract_case(row: Dict[str, object]) -> Optional[Dict[str, str]]:
 
 
 def fetch_tcga_clinical_survival(
-    project_ids: Optional[List[str]] = None,
+    project_ids: list[str] | None = None,
     page_size: int = 2000,
-) -> List[Dict[str, str]]:
+) -> list[dict[str, str]]:
     projects = project_ids or TCGA_SOLID_TUMOR_PROJECTS
     filters = {
         "op": "in",
@@ -124,8 +123,12 @@ def fetch_tcga_clinical_survival(
             "from": str(offset),
         }
         url = f"{GDC_CASES_ENDPOINT}?{urllib.parse.urlencode(params)}"
+        parsed = urllib.parse.urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise ValueError(f"refusing to fetch non-http(s) URL: {url}")
 
-        with urllib.request.urlopen(url) as response:
+        # nosec B310 - URL scheme is validated above to be http(s) only
+        with urllib.request.urlopen(url) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
 
         data = payload["data"]
@@ -143,7 +146,7 @@ def fetch_tcga_clinical_survival(
     return rows
 
 
-def write_tcga_clinical_csv(output_path: str | Path, project_ids: Optional[List[str]] = None) -> int:
+def write_tcga_clinical_csv(output_path: str | Path, project_ids: list[str] | None = None) -> int:
     rows = fetch_tcga_clinical_survival(project_ids=project_ids)
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
