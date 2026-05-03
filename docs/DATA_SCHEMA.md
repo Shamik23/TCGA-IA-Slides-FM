@@ -31,4 +31,3 @@ Each feature file should contain either:
 - `[feature_dim]` for a pre-pooled slide vector.
 
 Arrays are loaded as `float32`.
-

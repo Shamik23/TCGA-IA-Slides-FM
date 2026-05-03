@@ -26,7 +26,7 @@ def _as_float(value: object, default: float | None = None) -> float:
         if default is None:
             raise ValueError("missing required numeric value")
         return default
-    return float(value)
+    return float(value)  # type: ignore[arg-type]
 
 
 def _as_event(value: object) -> int:
@@ -160,8 +160,8 @@ class SlideBagDataset:
 def collate_slide_bags(batch: Sequence[dict[str, object]]) -> dict[str, object]:
     import torch
 
-    max_tiles = max(item["features"].shape[0] for item in batch)  # type: ignore[index]
-    feature_dim = batch[0]["features"].shape[1]  # type: ignore[index]
+    max_tiles = max(item["features"].shape[0] for item in batch)  # type: ignore[attr-defined]
+    feature_dim = batch[0]["features"].shape[1]  # type: ignore[attr-defined]
     clinical_dim = len(batch[0]["clinical"])  # type: ignore[arg-type]
 
     features = torch.zeros(len(batch), max_tiles, feature_dim, dtype=torch.float32)
@@ -177,8 +177,8 @@ def collate_slide_bags(batch: Sequence[dict[str, object]]) -> dict[str, object]:
         tile_count = item_features.shape[0]
         features[row, :tile_count] = item_features
         mask[row, :tile_count] = True
-        durations[row] = float(item["duration"])
-        events[row] = float(item["event"])
+        durations[row] = float(item["duration"])  # type: ignore[arg-type]
+        events[row] = float(item["event"])  # type: ignore[arg-type]
         if clinical_dim:
             clinical[row] = torch.as_tensor(item["clinical"], dtype=torch.float32)
         patient_ids.append(str(item["patient_id"]))

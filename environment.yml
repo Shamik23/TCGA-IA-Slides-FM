@@ -1,13 +1,13 @@
 name: tcga-survival-fm
 channels:
-  - pytorch
-  - huggingface
   - conda-forge
+  - pytorch
   - defaults
 dependencies:
   - python>=3.9,<3.13
-  - pytorch>=2.2
-  - torchvision>=0.17
+  - mkl=2024.0
+  - pytorch::pytorch>=2.2
+  - pytorch::torchvision>=0.17
   - pip
   - pip:
     - huggingface-hub>=0.24
@@ -17,4 +17,4 @@ dependencies:
     - tqdm>=4.66
     - transformers>=4.44
     - pytest>=8
-    - ruff>=0.6
+    - pytest-cov>=5

@@ -11,4 +11,3 @@ hidden_dim: 256
 dropout: 0.15
 val_fraction: 0.2
 seed: 13
-

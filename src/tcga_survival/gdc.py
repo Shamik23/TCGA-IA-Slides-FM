@@ -76,9 +76,9 @@ def _extract_case(row: dict[str, object]) -> dict[str, str] | None:
     if not isinstance(diagnoses, list):
         diagnoses = []
 
-    vital_status = str(demographic.get("vital_status", "")).lower()  # type: ignore[union-attr]
+    vital_status = str(demographic.get("vital_status", "")).lower()  # type: ignore[attr-defined]
     diagnosis_days_to_death = [diagnosis.get("days_to_death") for diagnosis in diagnoses]
-    days_to_death = _first_numeric([demographic.get("days_to_death")] + diagnosis_days_to_death)  # type: ignore[union-attr]
+    days_to_death = _first_numeric([demographic.get("days_to_death")] + diagnosis_days_to_death)  # type: ignore[attr-defined]
     days_to_last_follow_up = _first_numeric(
         [diagnosis.get("days_to_last_follow_up") for diagnosis in diagnoses]
         + [diagnosis.get("days_to_last_known_disease_status") for diagnosis in diagnoses]
@@ -94,7 +94,7 @@ def _extract_case(row: dict[str, object]) -> dict[str, str] | None:
 
     return {
         "patient_id": str(row.get("submitter_id", "")),
-        "project_id": str(project.get("project_id", "")),  # type: ignore[union-attr]
+        "project_id": str(project.get("project_id", "")),  # type: ignore[attr-defined]
         "duration_days": str(int(duration)),
         "event": str(event),
         "age_at_diagnosis_days": "" if age_at_diagnosis is None else str(int(age_at_diagnosis)),

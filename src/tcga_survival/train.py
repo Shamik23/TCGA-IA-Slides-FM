@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import cast
 
 from .data import (
     SlideBagDataset,
@@ -31,10 +32,9 @@ def resolve_device(preferred: str = "auto") -> str:
 
 
 def _move_batch(batch: dict[str, object], device: str) -> dict[str, object]:
-
     moved = dict(batch)
     for key in ("features", "mask", "duration", "event", "clinical"):
-        moved[key] = batch[key].to(device)  # type: ignore[union-attr]
+        moved[key] = batch[key].to(device)  # type: ignore[attr-defined]
     return moved
 
 
@@ -152,12 +152,17 @@ def train_survival_model(
         seed=seed,
     )
 
-    model = CoxMILSurvivalModel(
-        feature_dim=feature_dim,
-        clinical_dim=clinical_dim,
-        attention_dim=attention_dim,
-        hidden_dim=hidden_dim,
-        dropout=dropout,
+    import torch.nn as nn
+
+    model = cast(
+        nn.Module,
+        CoxMILSurvivalModel(
+            feature_dim=feature_dim,
+            clinical_dim=clinical_dim,
+            attention_dim=attention_dim,
+            hidden_dim=hidden_dim,
+            dropout=dropout,
+        ),
     ).to(resolved_device)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=weight_decay)

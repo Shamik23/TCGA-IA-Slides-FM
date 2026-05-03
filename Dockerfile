@@ -1,8 +1,13 @@
 # TCGA Survival Model Training Pipeline
-# Multi-stage build: slim Python + CPU PyTorch (works on x86_64 and arm64).
-# For NVIDIA GPUs, swap the base image to pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime.
+# Multi-stage build: supports both CPU and NVIDIA GPU variants.
+# Usage:
+#   CPU:  docker build -t tcga-survival-fm:latest .
+#   GPU:  docker build --build-arg USE_GPU=true -t tcga-survival-fm:latest .
 
-FROM python:3.11-slim AS base
+ARG USE_GPU=
+FROM ${USE_GPU:+pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime}${USE_GPU:-python:3.11-slim} AS base
+
+ARG USE_GPU=
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -26,13 +31,18 @@ WORKDIR /app
 # Install dependencies first for better layer caching
 COPY pyproject.toml ./
 COPY README.md ./
-COPY src/ ./src/
 
-# CPU-only torch wheels keep the image small; override at build time if needed.
-ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
-RUN pip install --upgrade pip \
-    && pip install --index-url ${TORCH_INDEX_URL} torch==2.4.1 torchvision==0.19.1 \
-    && pip install -e ".[dev]"
+# Install PyTorch: GPU image already has it, CPU image needs install
+ARG INSTALL_DEV=false
+RUN pip install --upgrade pip
+RUN if [ "$USE_GPU" = "true" ]; then \
+        echo "Using pre-installed GPU PyTorch from base image"; \
+    else \
+        pip install --index-url https://download.pytorch.org/whl/cpu torch==2.4.1 torchvision==0.19.1; \
+    fi
+
+COPY src/ ./src/
+RUN if [ "$INSTALL_DEV" = "true" ]; then pip install -e ".[dev]"; else pip install -e "."; fi
 
 # Application code
 COPY scripts/ ./scripts/

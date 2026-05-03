@@ -20,9 +20,20 @@ Pick one of the three options.
 
 ### Docker (recommended)
 
+build directly with options:
+
 ```bash
-docker compose build
-docker compose run --rm tcga-survival --help
+# CPU-only, production (default)
+docker build -t tcga-survival-fm:latest .
+
+# CPU, development (adds pytest, mypy, bandit, pre-commit)
+docker build --build-arg INSTALL_DEV=true -t tcga-survival-fm:latest .
+
+# NVIDIA GPU, production
+docker build --build-arg USE_GPU=true -t tcga-survival-fm:latest .
+
+# NVIDIA GPU, development
+docker build --build-arg USE_GPU=true --build-arg INSTALL_DEV=true -t tcga-survival-fm:latest .
 ```
 
 ### Conda
@@ -30,7 +41,8 @@ docker compose run --rm tcga-survival --help
 ```bash
 conda env create -f environment.yml
 conda activate tcga-survival-fm
-pip install -e ".[dev]"
+pip install -e "."          # production
+pip install -e ".[dev]"    # add dev tools (ruff, mypy, bandit, pre-commit)
 ```
 
 ### pip / venv
@@ -126,6 +138,8 @@ ruff check src/ scripts/ tests/    # lint
 ruff format src/ scripts/ tests/   # format
 bandit -r src/                     # security scan
 pytest                             # tests
+pre-commit install                 # install git hooks
+pre-commit run --all-files         # run hooks manually
 ```
 
 ## Project layout
