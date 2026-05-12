@@ -30,11 +30,29 @@ docker build -t tcga-survival-fm:latest .
 docker build --build-arg INSTALL_DEV=true -t tcga-survival-fm:latest .
 
 # NVIDIA GPU, production
-docker build --build-arg USE_GPU=true -t tcga-survival-fm:latest .
+docker build --build-arg BASE=gpu-base -t tcga-survival-fm:latest .
 
 # NVIDIA GPU, development
-docker build --build-arg USE_GPU=true --build-arg INSTALL_DEV=true -t tcga-survival-fm:latest .
+docker build --build-arg BASE=gpu-base --build-arg INSTALL_DEV=true -t tcga-survival-fm:latest .
 ```
+
+**GPU prerequisites** — running the GPU image with `--gpus all` (or the
+`pipeline-gpu` compose service) requires:
+
+1. **Native Docker Engine** (`docker-ce`). Docker Desktop for Linux runs the
+   engine in a QEMU VM and does **not** support NVIDIA GPU passthrough.
+2. **NVIDIA Container Toolkit** on the host:
+   ```bash
+   curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+     sudo gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+   curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+     sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+     sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+   sudo apt-get update && sudo apt-get install -y nvidia-container-toolkit
+   sudo nvidia-ctk runtime configure --runtime=docker
+   sudo systemctl restart docker
+   ```
+3. Verify with: `docker run --rm --gpus all nvidia/cuda:12.4.0-base-ubuntu22.04 nvidia-smi`.
 
 ### Conda
 
@@ -58,8 +76,11 @@ pip install -e ".[dev]"
 Runs the full train loop end-to-end on synthetic features (no TCGA data).
 
 ```bash
-# With Docker
+# With Docker (CPU)
 docker compose run --rm pipeline
+
+# With Docker (GPU) -- requires nvidia-container-toolkit; see Installation > GPU prerequisites
+docker compose run --rm pipeline-gpu
 
 # Local
 python scripts/make_synthetic_dataset.py --output-dir data/synthetic

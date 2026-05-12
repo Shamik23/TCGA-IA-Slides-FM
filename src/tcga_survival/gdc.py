@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import csv
 import json
+import ssl
 import urllib.parse
 import urllib.request
 from collections.abc import Iterable
 from pathlib import Path
+
+HTTP_TIMEOUT_SECONDS = 30
 
 GDC_CASES_ENDPOINT = "https://api.gdc.cancer.gov/cases"
 
@@ -70,15 +73,18 @@ def _first_numeric(values: Iterable[object]) -> float | None:
 
 
 def _extract_case(row: dict[str, object]) -> dict[str, str] | None:
-    demographic = row.get("demographic") or {}
-    project = row.get("project") or {}
-    diagnoses = row.get("diagnoses") or []
-    if not isinstance(diagnoses, list):
-        diagnoses = []
+    demographic_raw = row.get("demographic") or {}
+    project_raw = row.get("project") or {}
+    diagnoses_raw = row.get("diagnoses") or []
+    demographic: dict[str, object] = demographic_raw if isinstance(demographic_raw, dict) else {}
+    project: dict[str, object] = project_raw if isinstance(project_raw, dict) else {}
+    diagnoses: list[dict[str, object]] = (
+        [d for d in diagnoses_raw if isinstance(d, dict)] if isinstance(diagnoses_raw, list) else []
+    )
 
-    vital_status = str(demographic.get("vital_status", "")).lower()  # type: ignore[attr-defined]
+    vital_status = str(demographic.get("vital_status", "")).lower()
     diagnosis_days_to_death = [diagnosis.get("days_to_death") for diagnosis in diagnoses]
-    days_to_death = _first_numeric([demographic.get("days_to_death")] + diagnosis_days_to_death)  # type: ignore[attr-defined]
+    days_to_death = _first_numeric([demographic.get("days_to_death")] + diagnosis_days_to_death)
     days_to_last_follow_up = _first_numeric(
         [diagnosis.get("days_to_last_follow_up") for diagnosis in diagnoses]
         + [diagnosis.get("days_to_last_known_disease_status") for diagnosis in diagnoses]
@@ -87,14 +93,21 @@ def _extract_case(row: dict[str, object]) -> dict[str, str] | None:
         [diagnosis.get("age_at_diagnosis") for diagnosis in diagnoses]
     )
 
-    event = 1 if vital_status == "dead" or days_to_death is not None else 0
+    # vital_status is authoritative; only fall back to days_to_death heuristic
+    # when vital_status is missing or unknown.
+    if vital_status == "dead":
+        event = 1
+    elif vital_status == "alive":
+        event = 0
+    else:
+        event = 1 if days_to_death is not None else 0
     duration = days_to_death if event else days_to_last_follow_up
     if duration is None or duration <= 0:
         return None
 
     return {
         "patient_id": str(row.get("submitter_id", "")),
-        "project_id": str(project.get("project_id", "")),  # type: ignore[attr-defined]
+        "project_id": str(project.get("project_id", "")),
         "duration_days": str(int(duration)),
         "event": str(event),
         "age_at_diagnosis_days": "" if age_at_diagnosis is None else str(int(age_at_diagnosis)),
@@ -127,13 +140,20 @@ def fetch_tcga_clinical_survival(
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"refusing to fetch non-http(s) URL: {url}")
 
+        ssl_ctx = ssl.create_default_context()
         # nosec B310 - URL scheme is validated above to be http(s) only
-        with urllib.request.urlopen(url) as response:  # noqa: S310
+        with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS, context=ssl_ctx) as response:  # noqa: S310
             payload = json.loads(response.read().decode("utf-8"))
 
-        data = payload["data"]
-        total = int(data["pagination"]["total"])
-        cases = data["hits"]
+        try:
+            data = payload["data"]
+            total = int(data["pagination"]["total"])
+            cases = data["hits"]
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"Unexpected GDC API response structure at offset {offset}: {exc}. "
+                f"Response keys: {list(payload.keys()) if isinstance(payload, dict) else type(payload)}"
+            ) from exc
         if not cases:
             break
 

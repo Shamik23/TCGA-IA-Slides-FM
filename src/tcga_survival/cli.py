@@ -8,7 +8,10 @@ from pathlib import Path
 
 
 def _positive_int(value: str) -> int:
-    parsed = int(value)
+    try:
+        parsed = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"invalid integer value: {value!r}") from exc
     if parsed <= 0:
         raise argparse.ArgumentTypeError("must be positive")
     return parsed
@@ -41,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
     featurize.add_argument("--batch-size", type=_positive_int, default=4)
     featurize.add_argument("--max-tiles", type=_optional_positive_int, default=None)
     featurize.add_argument("--device", default="auto")
+    featurize.add_argument(
+        "--revision",
+        default=None,
+        help="Model revision (commit SHA or tag) to pin for reproducibility and supply-chain safety.",
+    )
 
     train = subparsers.add_parser("train", help="Train the attention MIL Cox model")
     train.add_argument("--manifest", required=True, type=Path)
@@ -68,8 +76,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "download-clinical":
+        import re as _re
+
         from .gdc import write_tcga_clinical_csv
 
+        if args.projects is not None:
+            if len(args.projects) > 100:
+                parser.error("--projects may not contain more than 100 entries")
+            project_re = _re.compile(r"^[A-Z]{2,16}-[A-Z0-9]{2,16}$")
+            for project in args.projects:
+                if not project_re.match(project):
+                    parser.error(
+                        f"invalid project id {project!r}; expected format like 'TCGA-BRCA'"
+                    )
         count = write_tcga_clinical_csv(args.output, project_ids=args.projects)
         print(f"wrote {count} patients to {args.output}")
         return
@@ -87,6 +106,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             batch_size=args.batch_size,
             max_tiles=args.max_tiles,
             device=args.device,
+            revision=args.revision,
         )
         print(f"wrote manifest to {args.manifest}")
         return

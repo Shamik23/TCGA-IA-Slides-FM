@@ -53,6 +53,15 @@ def read_manifest(path: str | Path) -> list[SlideRecord]:
             feature_path = Path(row["feature_path"])
             if not feature_path.is_absolute():
                 feature_path = manifest_path.parent / feature_path
+            feature_path = feature_path.resolve()
+            manifest_root = manifest_path.parent.resolve()
+            try:
+                feature_path.relative_to(manifest_root)
+            except ValueError as exc:
+                raise ValueError(
+                    f"feature_path '{feature_path}' escapes the manifest directory '{manifest_root}'. "
+                    "Use absolute paths or paths relative to the manifest file."
+                ) from exc
 
             duration = _as_float(row.get(duration_key))
             if duration <= 0:
@@ -81,12 +90,18 @@ def infer_feature_dim(records: Sequence[SlideRecord]) -> int:
 
     if not records:
         raise ValueError("cannot infer feature dimension from an empty record list")
-    array = np.load(records[0].feature_path, mmap_mode="r")
-    if array.ndim == 1:
-        return int(array.shape[0])
-    if array.ndim == 2:
-        return int(array.shape[1])
-    raise ValueError(f"expected 1D or 2D feature array, got shape {array.shape}")
+    array = np.load(records[0].feature_path, mmap_mode="r", allow_pickle=False)
+    try:
+        if array.ndim == 1:
+            return int(array.shape[0])
+        if array.ndim == 2:
+            return int(array.shape[1])
+        raise ValueError(f"expected 1D or 2D feature array, got shape {array.shape}")
+    finally:
+        # Close memory-mapped backing file deterministically.
+        if hasattr(array, "_mmap") and array._mmap is not None:
+            array._mmap.close()
+        del array
 
 
 def patient_level_split(
@@ -135,7 +150,7 @@ class SlideBagDataset:
         import numpy as np
 
         record = self.records[index]
-        features = np.load(record.feature_path).astype("float32", copy=False)
+        features = np.load(record.feature_path, allow_pickle=False).astype("float32", copy=False)
         if features.ndim == 1:
             features = features[None, :]
         if features.ndim != 2:
@@ -163,6 +178,13 @@ def collate_slide_bags(batch: Sequence[dict[str, object]]) -> dict[str, object]:
     max_tiles = max(item["features"].shape[0] for item in batch)  # type: ignore[attr-defined]
     feature_dim = batch[0]["features"].shape[1]  # type: ignore[attr-defined]
     clinical_dim = len(batch[0]["clinical"])  # type: ignore[arg-type]
+    for i, item in enumerate(batch):
+        item_clinical_dim = len(item["clinical"])  # type: ignore[arg-type]
+        if item_clinical_dim != clinical_dim:
+            raise ValueError(
+                f"Inconsistent clinical dimension in batch: item 0 has {clinical_dim} features, "
+                f"item {i} has {item_clinical_dim}. All records must have the same clinical columns."
+            )
 
     features = torch.zeros(len(batch), max_tiles, feature_dim, dtype=torch.float32)
     mask = torch.zeros(len(batch), max_tiles, dtype=torch.bool)

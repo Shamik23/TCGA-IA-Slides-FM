@@ -14,7 +14,21 @@ def concordance_index(
 
     durations = [float(value) for value in duration]
     risks = [float(value) for value in risk]
-    events = [int(value) for value in event]
+    raw_events = [float(value) for value in event]
+    events: list[int] = []
+    for value in raw_events:
+        if value not in (0.0, 1.0):
+            raise ValueError(
+                f"event values must be binary (0 or 1); got {value!r}. "
+                "Pass observed event indicators, not probabilities."
+            )
+        events.append(int(value))
+
+    if not (len(durations) == len(risks) == len(events)):
+        raise ValueError(
+            f"duration, risk, and event must have the same length; "
+            f"got {len(durations)}, {len(risks)}, {len(events)}"
+        )
 
     concordant = 0.0
     comparable = 0

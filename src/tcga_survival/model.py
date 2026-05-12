@@ -13,7 +13,10 @@ class GatedAttentionMIL:
 
             class _GatedAttentionMIL(nn.Module):
                 def __init__(self, input_dim: int, attention_dim: int = 256, dropout: float = 0.1):
+                    import torch  # noqa: PLC0415
+
                     super().__init__()
+                    self._torch = torch
                     self.attention_v = nn.Sequential(
                         nn.Linear(input_dim, attention_dim),
                         nn.Tanh(),
@@ -27,8 +30,7 @@ class GatedAttentionMIL:
                     self.attention = nn.Linear(attention_dim, 1)
 
                 def forward(self, features, mask=None):
-                    import torch
-
+                    torch = self._torch
                     scores = self.attention(
                         self.attention_v(features) * self.attention_u(features)
                     ).squeeze(-1)
@@ -65,7 +67,10 @@ class CoxMILSurvivalModel:
                     hidden_dim: int = 256,
                     dropout: float = 0.15,
                 ):
+                    import torch  # noqa: PLC0415
+
                     super().__init__()
+                    self._torch = torch
                     self.feature_norm = nn.LayerNorm(feature_dim)
                     self.mil = GatedAttentionMIL(feature_dim, attention_dim, dropout)
                     self.clinical_dim = clinical_dim
@@ -90,8 +95,7 @@ class CoxMILSurvivalModel:
                     )
 
                 def forward(self, features, mask=None, clinical=None):
-                    import torch
-
+                    torch = self._torch
                     features = self.feature_norm(features)
                     pooled, attention = self.mil(features, mask)
 

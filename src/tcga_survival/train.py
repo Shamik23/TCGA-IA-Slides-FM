@@ -32,9 +32,13 @@ def resolve_device(preferred: str = "auto") -> str:
 
 
 def _move_batch(batch: dict[str, object], device: str) -> dict[str, object]:
+    import torch
+
     moved = dict(batch)
     for key in ("features", "mask", "duration", "event", "clinical"):
-        moved[key] = batch[key].to(device)  # type: ignore[attr-defined]
+        value = batch.get(key)
+        if isinstance(value, torch.Tensor):
+            moved[key] = value.to(device)
     return moved
 
 
@@ -65,7 +69,8 @@ def evaluate(model, loader, device: str) -> dict[str, float]:
     import torch
 
     model.eval()
-    losses: list[float] = []
+    total_loss = 0.0
+    total_count = 0
     risks: list[float] = []
     durations: list[float] = []
     events: list[int] = []
@@ -75,13 +80,15 @@ def evaluate(model, loader, device: str) -> dict[str, float]:
             batch = _move_batch(batch, device)
             output = model(batch["features"], batch["mask"], batch["clinical"])
             loss = cox_ph_loss(output["risk"], batch["duration"], batch["event"])
-            losses.append(float(loss.cpu()))
+            count = int(batch["features"].shape[0])
+            total_loss += float(loss.cpu()) * count
+            total_count += count
             risks.extend(float(value) for value in output["risk"].detach().cpu())
             durations.extend(float(value) for value in batch["duration"].detach().cpu())
             events.extend(int(value) for value in batch["event"].detach().cpu())
 
     return {
-        "loss": sum(losses) / max(len(losses), 1),
+        "loss": total_loss / max(total_count, 1),
         "c_index": concordance_index(durations, risks, events),
     }
 
@@ -134,6 +141,7 @@ def train_survival_model(
     device: str = "auto",
 ) -> dict[str, float]:
     import torch
+    import torch.nn as nn
 
     torch.manual_seed(seed)
     resolved_device = resolve_device(device)
@@ -143,6 +151,14 @@ def train_survival_model(
     train_records, val_records = patient_level_split(records, val_fraction=val_fraction, seed=seed)
     feature_dim = infer_feature_dim(records)
     clinical_dim = len(records[0].clinical)
+    inconsistent = [
+        (r.slide_id, len(r.clinical)) for r in records if len(r.clinical) != clinical_dim
+    ]
+    if inconsistent:
+        raise ValueError(
+            f"All records must have the same number of clinical features ({clinical_dim}), "
+            f"but {len(inconsistent)} record(s) differ: {inconsistent[:5]}"
+        )
 
     train_loader, val_loader = build_loaders(
         train_records,
@@ -151,8 +167,6 @@ def train_survival_model(
         max_tiles=max_tiles,
         seed=seed,
     )
-
-    import torch.nn as nn
 
     model = cast(
         nn.Module,
@@ -208,7 +222,7 @@ def train_survival_model(
             score = -metrics["loss"]
         if score > best_metric:
             best_metric = score
-            best_metrics = metrics
+            best_metrics = {k: float(v) for k, v in metrics.items()}
             torch.save(
                 {
                     "model_state": model.state_dict(),

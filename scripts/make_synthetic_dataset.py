@@ -20,6 +20,11 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=13)
     args = parser.parse_args()
 
+    if args.slides <= 0:
+        parser.error("--slides must be a positive integer")
+    if args.min_tiles > args.max_tiles:
+        parser.error("--min-tiles must be <= --max-tiles")
+
     rng = np.random.default_rng(args.seed)
     feature_dir = args.output_dir / "features"
     feature_dir.mkdir(parents=True, exist_ok=True)

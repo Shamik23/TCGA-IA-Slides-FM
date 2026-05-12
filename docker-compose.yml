@@ -15,7 +15,7 @@ services:
     # Override entrypoint args via `docker compose run --rm tcga-survival <cmd>`
     command: ["--help"]
 
-  # Convenience service for running the smoke-test pipeline end-to-end.
+  # Convenience service for running the smoke-test pipeline end-to-end (CPU).
   pipeline:
     extends:
       service: tcga-survival
@@ -28,6 +28,41 @@ services:
         --manifest /app/data/synthetic/manifest.csv
         --output-dir /app/runs/synthetic
         --epochs 2 --batch-size 8
+
+  # GPU variant of the smoke-test pipeline.
+  # Requires: native Docker Engine + NVIDIA Container Toolkit
+  # (Docker Desktop for Linux does NOT support GPU passthrough).
+  # Usage: docker compose run --rm pipeline-gpu
+  pipeline-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BASE: gpu-base
+    image: tcga-survival-fm:gpu
+    container_name: tcga-survival-pipeline-gpu
+    volumes:
+      - ./data:/app/data
+      - ./runs:/app/runs
+      - hf_cache:/app/.cache/huggingface
+    environment:
+      - HF_HOME=/app/.cache/huggingface
+      - NVIDIA_VISIBLE_DEVICES=all
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    entrypoint: ["bash", "-lc"]
+    command:
+      - >
+        python scripts/make_synthetic_dataset.py --output-dir /app/data/synthetic --slides 64
+        && tcga-survival train
+        --manifest /app/data/synthetic/manifest.csv
+        --output-dir /app/runs/synthetic
+        --epochs 2 --batch-size 8 --device cuda
 
 volumes:
   hf_cache:
