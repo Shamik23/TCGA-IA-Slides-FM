@@ -141,8 +141,9 @@ def fetch_tcga_clinical_survival(
             raise ValueError(f"refusing to fetch non-http(s) URL: {url}")
 
         ssl_ctx = ssl.create_default_context()
-        # nosec B310 - URL scheme is validated above to be http(s) only
-        with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS, context=ssl_ctx) as response:  # noqa: S310
+        with urllib.request.urlopen(  # noqa: S310  # nosec B310 - scheme validated http(s) above
+            url, timeout=HTTP_TIMEOUT_SECONDS, context=ssl_ctx
+        ) as response:
             payload = json.loads(response.read().decode("utf-8"))
 
         try:
