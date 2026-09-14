@@ -92,7 +92,60 @@ tcga-survival train \
 
 Outputs land in `runs/synthetic/`: `model.pt`, `metrics.json`, `config.json`.
 
-## Full workflow
+## Full pipeline with public UNI2-h TCGA embeddings
+
+If you do not have raw WSIs, you can run the full survival pipeline against the
+gated [`MahmoodLab/UNI2-h-features`](https://huggingface.co/datasets/MahmoodLab/UNI2-h-features)
+dataset (precomputed UNI2-h embeddings for TCGA / CPTAC / PANDA).
+
+### 1. Request HF access
+The dataset is gated. Request access on the dataset page using your
+**institutional email** (personal `@gmail`/`@hotmail`/`@qq` requests are denied).
+
+### 2. Download a project archive (~10-50 GB per project)
+```bash
+huggingface-cli login
+huggingface-cli download MahmoodLab/UNI2-h-features TCGA/TCGA-BRCA.tar.gz \
+  --repo-type dataset --local-dir ~/uni2h
+mkdir -p ~/uni2h/TCGA-BRCA && tar -xzf ~/uni2h/TCGA/TCGA-BRCA.tar.gz -C ~/uni2h/TCGA-BRCA
+```
+
+### 3. Pull TCGA clinical labels (Docker GPU)
+```bash
+docker run --rm --gpus all -v "$(pwd)/data:/app/data" \
+  --user "$(id -u):$(id -g)" tcga-survival-fm:gpu \
+  download-clinical --projects TCGA-BRCA \
+  --output /app/data/tcga_brca_clinical.csv
+```
+
+### 4. Convert .h5 -> .npy + build manifest
+```bash
+docker run --rm --gpus all --entrypoint="" \
+  --user "$(id -u):$(id -g)" \
+  -v "$(pwd)/data:/app/data" \
+  -v ~/uni2h/TCGA-BRCA:/h5:ro \
+  tcga-survival-fm:gpu \
+  python /app/scripts/convert_uni2h_features.py \
+    --h5-dir /h5 \
+    --clinical-csv /app/data/tcga_brca_clinical.csv \
+    --output-dir /app/data/uni2h_brca \
+    --max-tiles 2000
+```
+
+### 5. Train (Docker GPU)
+```bash
+docker run --rm --gpus all -v "$(pwd)/data:/app/data" -v "$(pwd)/runs:/app/runs" \
+  --user "$(id -u):$(id -g)" tcga-survival-fm:gpu \
+  train \
+  --manifest /app/data/uni2h_brca/manifest.csv \
+  --output-dir /app/runs/uni2h_brca \
+  --epochs 50 --batch-size 4 --max-tiles 512 \
+  --device cuda
+```
+
+Outputs land in `runs/uni2h_brca/`: `model.pt`, `metrics.json`, `config.json`.
+
+## Full workflow (your own WSIs)
 
 ### 1. Clinical labels
 
