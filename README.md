@@ -1,18 +1,24 @@
 # TCGA Survival Foundation Model
 
 Train a censored survival model for TCGA solid tumors on frozen histopathology
-foundation-model embeddings with an attention-MIL Cox head.
+foundation-model embeddings with an attention-MIL Cox head. The repository does
+not read whole-slide images or perform tissue detection; it expects pre-tiled
+image folders or precomputed feature files.
 
 ## Pipeline
 
 1. Fetch TCGA clinical survival labels from the GDC API.
-2. Tile diagnostic slides into per-slide folders (external to this repo).
-3. Cache tile features with a frozen pathology encoder.
-4. Train the attention-MIL Cox head on cached features.
-5. Evaluate with censored concordance index (c-index).
+2. Prepare diagnostic slide tiles with an external tiling tool.
+3. Cache tile features with a frozen pathology encoder, or convert a public
+  UNI2-h `.h5` feature archive.
+4. Build a manifest that joins slide features to patient survival labels.
+5. Train the attention-MIL Cox head on cached features.
+6. Evaluate with the censored concordance index (c-index).
 
-Tiling is kept outside the training loop so the model trains on laptop hardware
-once features are cached.
+Tiling and feature extraction are kept outside the training loop. Training reads
+variable-length feature bags, pads each batch, applies gated attention pooling,
+and predicts one Cox risk score per slide. Splits are made by patient to avoid
+slide leakage.
 
 ## Installation
 
@@ -30,10 +36,10 @@ docker build -t tcga-survival-fm:latest .
 docker build --build-arg INSTALL_DEV=true -t tcga-survival-fm:latest .
 
 # NVIDIA GPU, production
-docker build --build-arg BASE=gpu-base -t tcga-survival-fm:latest .
+docker build --build-arg BASE=gpu-base -t tcga-survival-fm:gpu .
 
 # NVIDIA GPU, development
-docker build --build-arg BASE=gpu-base --build-arg INSTALL_DEV=true -t tcga-survival-fm:latest .
+docker build --build-arg BASE=gpu-base --build-arg INSTALL_DEV=true -t tcga-survival-fm:gpu .
 ```
 
 **GPU prerequisites** — running the GPU image with `--gpus all` (or the
@@ -61,6 +67,12 @@ conda env create -f environment.yml
 conda activate tcga-survival-fm
 pip install -e "."          # production
 pip install -e ".[dev]"    # add dev tools (ruff, mypy, bandit, pre-commit)
+```
+
+Enable the Git hook after installing the development tools:
+
+```bash
+pre-commit install
 ```
 
 ### pip / venv
@@ -92,6 +104,10 @@ tcga-survival train \
 
 Outputs land in `runs/synthetic/`: `model.pt`, `metrics.json`, `config.json`.
 
+The synthetic generator accepts `--slides`, `--feature-dim`, `--min-tiles`,
+`--max-tiles`, and `--seed`. It creates random feature bags and survival labels;
+it is intended only as an end-to-end smoke test.
+
 ## Full pipeline with public UNI2-h TCGA embeddings
 
 If you do not have raw WSIs, you can run the full survival pipeline against the
@@ -111,6 +127,13 @@ mkdir -p ~/uni2h/TCGA-BRCA && tar -xzf ~/uni2h/TCGA/TCGA-BRCA.tar.gz -C ~/uni2h/
 ```
 
 ### 3. Pull TCGA clinical labels (Docker GPU)
+
+Build the image first if it is not already available:
+
+```bash
+docker build --build-arg BASE=gpu-base -t tcga-survival-fm:gpu .
+```
+
 ```bash
 docker run --rm --gpus all -v "$(pwd)/data:/app/data" \
   --user "$(id -u):$(id -g)" tcga-survival-fm:gpu \
@@ -169,8 +192,12 @@ data/tiles/
 
 ### 3. Feature extraction
 
-Default encoder is `MahmoodLab/UNI` (requires `huggingface-cli login` for gated
-access). Use `owkin/phikon` as an unrestricted fallback for prototyping.
+The default encoder is `MahmoodLab/UNI` with the `timm` backend (requires
+`huggingface-cli login` for gated access). Use `owkin/phikon` as an unrestricted
+fallback for prototyping. The `transformers` backend is also supported. Use
+`--device cuda`, `--device mps`, or `--device cpu` to override automatic device
+selection; `auto` prefers MPS, then CUDA, then CPU. Use `--revision` with the
+`transformers` backend to pin a model revision.
 
 ```bash
 tcga-survival featurize-folder \
@@ -181,10 +208,16 @@ tcga-survival featurize-folder \
   --encoder-name MahmoodLab/UNI \
   --backend timm \
   --batch-size 4 \
-  --max-tiles 2000
+  --max-tiles 2000 \
+  --device cuda
 ```
 
 For tight memory: `--batch-size 1 --max-tiles 512`.
+
+Feature extraction writes one float32 `.npy` file per slide directly under
+`--output-dir` and writes the manifest to `--manifest`. If a clinical CSV is
+provided, its `age_at_diagnosis_days` field is emitted as the optional
+`clinical_age_at_diagnosis_days` manifest column.
 
 ### 4. Train
 
@@ -192,18 +225,51 @@ For tight memory: `--batch-size 1 --max-tiles 512`.
 tcga-survival train \
   --manifest data/manifest.csv \
   --output-dir runs/uni_abmil_cox \
-  --epochs 50 --batch-size 4 --max-tiles 512
+  --epochs 50 --batch-size 4 --max-tiles 512 \
+  --device cuda
 ```
+
+Training defaults to 50 epochs, batch size 4, a 20% patient-level validation
+split, and at most 512 tiles per slide. Use `--max-tiles all` or `--max-tiles
+none` to disable tile subsampling. The run directory contains the best
+checkpoint (`model.pt`), its metrics (`metrics.json`), and the resolved
+configuration including the selected device (`config.json`).
 
 ## Configuration notes
 
 - **Clinical covariates:** manifest columns prefixed with `clinical_` are fed
   to the survival head as numeric features.
 - **Splits:** patient-level to prevent slide leakage.
-- **Loss:** Cox partial log-likelihood with censoring.
+- **Model:** LayerNorm, gated attention MIL pooling, and an MLP risk head. If
+  clinical covariates are present, they are encoded and concatenated before the
+  risk head.
+- **Loss:** negative Cox partial log-likelihood with censoring. Higher predicted
+  risk means shorter predicted survival.
+- **Metric:** Harrell-style c-index; it may be `NaN` when no comparable observed
+  events exist in a validation set.
+- **Feature paths:** relative paths are resolved from the manifest directory and
+  may not escape that directory.
 - **Apple Silicon:** PyTorch uses MPS automatically; the Cox loss falls back to
   CPU for `logcumsumexp`. `PYTORCH_ENABLE_MPS_FALLBACK=1` is pre-set in
   `docker-compose.yml`.
+
+See [docs/DATA_SCHEMA.md](docs/DATA_SCHEMA.md) for the manifest and `.npy`
+feature-array contract.
+
+## Command reference
+
+The installed `tcga-survival` command provides:
+
+```text
+download-clinical   Fetch GDC survival labels for selected projects.
+featurize-folder    Embed image tiles and write feature files plus a manifest.
+train               Train and evaluate the attention-MIL Cox model.
+recommend-model     Print the recommended encoder and modeling approach.
+```
+
+Run `tcga-survival <command> --help` for all options. `download-clinical`
+defaults to the supported TCGA solid-tumor projects; pass one or more project
+IDs such as `TCGA-BRCA` with `--projects` to restrict the request.
 
 ## Development
 
